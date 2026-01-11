@@ -2,6 +2,7 @@ import os
 import asyncio
 import logging
 from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 from telethon.tl.types import MessageMediaDocument, MessageMediaPhoto
 from datetime import datetime
 import re
@@ -16,11 +17,19 @@ API_ID = int(os.getenv('API_ID', '0'))
 API_HASH = os.getenv('API_HASH', '')
 PHONE = os.getenv('PHONE', '')
 BOT_TOKEN = os.getenv('BOT_TOKEN', '')
+SESSION_STRING = os.getenv('SESSION_STRING', '')
 DOWNLOAD_PATH = os.getenv('DOWNLOAD_PATH', './downloads')
 
 os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 
-user_client = TelegramClient('user_session', API_ID, API_HASH)
+# Initialize clients with session string support
+if SESSION_STRING:
+    logger.info("Using session string for authentication")
+    user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+else:
+    logger.info("Using session file for authentication")
+    user_client = TelegramClient('user_session', API_ID, API_HASH)
+
 bot_client = TelegramClient('bot_session', API_ID, API_HASH)
 
 is_downloading = False
@@ -166,6 +175,7 @@ async def start_handler(event):
 Commands:
 - /download <link> - Download single message
 - /batch <start_link> <end_link> - Download range
+- /status - Check bot status
 - /help - Show this message
 
 Example:
@@ -229,6 +239,11 @@ async def batch_handler(event):
         is_downloading = False
         await event.reply(f"❌ Error: {str(e)}")
 
+@bot_client.on(events.NewMessage(pattern='/status'))
+async def status_handler(event):
+    status = "🟢 Idle" if not is_downloading else "🔴 Downloading..."
+    await event.reply(f"Bot Status: {status}\nDownload Path: {DOWNLOAD_PATH}")
+
 @bot_client.on(events.NewMessage(pattern='/help'))
 async def help_handler(event):
     await start_handler(event)
@@ -236,14 +251,17 @@ async def help_handler(event):
 async def main():
     try:
         logger.info("Starting user client...")
-        await user_client.start(phone=PHONE)
+        if SESSION_STRING:
+            await user_client.start()
+        else:
+            await user_client.start(phone=PHONE)
         logger.info("✅ User client started")
         
         logger.info("Starting bot client...")
         await bot_client.start(bot_token=BOT_TOKEN)
         logger.info("✅ Bot client started")
         
-        logger.info("🚀 Bot running!")
+        logger.info("🚀 Bot is running!")
         await bot_client.run_until_disconnected()
         
     except Exception as e:
